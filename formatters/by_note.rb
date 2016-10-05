@@ -19,20 +19,46 @@ module Timetrap
         longest_note = entries.inject('Notes'.length) {|l, e| [e.note.rstrip.length, l].max}
 
         dash_len = 'Duration - '.length
+        separator = Timetrap::Config['by_note_separator']
+        re_match = separator ? Regexp.new(separator) : /.+/
         by_date.keys.sort.each do |date|
           self.output << "## #{format_date date} ##\n\n"
 
           self.output << "%3s Duration   Notes\n" % id_heading
 
-          by_date[date].group_by(&:note).each do |k, v|
-            duration = v.map(&:duration).reduce(:+)
-            line     = v.first
+          by_date_hash = by_date[date].group_by do |item|
+            note = item[:note]
+            if matches = re_match.match(note)
+              note = matches[0]
+              item[:note_part] = matches.post_match
+            end
+            note
+          end
 
-            self.output <<  "%3s %8s - %-15s\n" % [
-              (Timetrap::CLI.args['-v'] ? line.id : ''),
-              format_duration(duration),
-              line.note,
-            ]
+          if ENV['DEBUG'] && ENV['DEBUG'] != '0'
+            require 'pp'
+            pp by_date_hash
+          end
+
+          by_date_hash.each do |k, v|
+            duration = v.map(&:duration).reduce(:+)
+
+            formatted_duration = format_duration(duration)
+            notes_used = []
+            note = nil
+            v.each do |line|
+              note = line[:note]
+              unless notes_used.include?(note)
+                self.output <<  "%3s %8s - %-15s\n" % [
+                  (Timetrap::CLI.args['-v'] ? line.id : ''),
+                  formatted_duration,
+                  note,
+                ]
+                notes_used << note
+              end
+              note = nil
+              formatted_duration = ''
+            end
           end
 
           self.output << "    %s\n" % ('─' * (dash_len + longest_note))
